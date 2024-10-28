@@ -81,42 +81,23 @@ async def check_nillion_installed() -> tuple[bool, str]:
     Returns: (is_installed, version_or_error)
     """
     try:
-        # Try multiple possible paths
-        possible_paths = [
-            os.path.expanduser("~/.nilup/bin"),
-            "/opt/render/.nilup/bin",  # Render specific path
-            "/opt/render/project/.nilup/bin",  # Another possible Render path
-            os.environ.get("NILUP_PATH")  # From environment variable if set
-        ]
+        # Use Render-specific path
+        nillion_path = "/opt/render/.nilup/bin"
+        env = {**os.environ, "PATH": f"{nillion_path}:{os.environ.get('PATH', '')}"}
+        
+        logger.info(f"Checking nillion in: {nillion_path}")
+        
+        if not os.path.exists(nillion_path):
+            logger.error(f"Directory does not exist: {nillion_path}")
+            return False, f"Nillion path not found: {nillion_path}"
 
-        # Filter out None values and create PATH
-        valid_paths = [p for p in possible_paths if p]
-        path_string = ":".join(valid_paths + [os.environ.get("PATH", "")])
-        
-        # Log the paths we're trying
-        logger.info(f"Checking for nillion in PATH: {path_string}")
-        logger.info(f"Current working directory: {os.getcwd()}")
-        
-        # Try to find nillion executable
-        nillion_path = None
-        for path in valid_paths:
-            if path and os.path.exists(os.path.join(path, "nillion")):
-                nillion_path = os.path.join(path, "nillion")
-                logger.info(f"Found nillion at: {nillion_path}")
-                break
-        
-        if not nillion_path:
-            logger.error("Could not find nillion executable in any path")
+        nillion_executable = os.path.join(nillion_path, "nillion")
+        if not os.path.exists(nillion_executable):
+            logger.error(f"Nillion executable not found at: {nillion_executable}")
             return False, "Nillion executable not found"
 
-        env = {**os.environ, "PATH": path_string}
-        
-        # Log environment for debugging
-        logger.info(f"Using environment PATH: {env.get('PATH')}")
-        
-        # Try to execute nillion
         process = await asyncio.create_subprocess_exec(
-            nillion_path,  # Use full path
+            nillion_executable,  # Use full path
             '--version',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -127,7 +108,7 @@ async def check_nillion_installed() -> tuple[bool, str]:
         
         if process.returncode == 0:
             version = stdout.decode().strip() or stderr.decode().strip()
-            logger.info(f"Successfully got nillion version: {version}")
+            logger.info(f"Nillion version: {version}")
             return True, version
         else:
             error_message = stderr.decode().strip()
@@ -135,14 +116,9 @@ async def check_nillion_installed() -> tuple[bool, str]:
             return False, error_message
             
     except Exception as e:
-        logger.error(f"Exception checking nillion: {str(e)}")
-        # Log more details about the environment
-        logger.error(f"Environment details:")
-        logger.error(f"HOME: {os.environ.get('HOME')}")
-        logger.error(f"USER: {os.environ.get('USER')}")
-        logger.error(f"PWD: {os.environ.get('PWD')}")
+        logger.error(f"Exception in check_nillion_installed: {str(e)}")
         return False, str(e)
-
+    
 @app.get("/debug/nilup")
 async def debug_nilup():
     """Debug endpoint to check nilup installation"""
