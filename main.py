@@ -143,28 +143,50 @@ async def check_nillion_installed() -> tuple[bool, str]:
         logger.error(f"PWD: {os.environ.get('PWD')}")
         return False, str(e)
 
-# Add this endpoint for debugging
-@app.get("/debug/paths")
-async def debug_paths():
-    """Debug endpoint to check paths and permissions"""
+@app.get("/debug/nilup")
+async def debug_nilup():
+    """Debug endpoint to check nilup installation"""
     try:
+        # Check various paths
         home = os.path.expanduser("~")
-        nilup_path = os.path.join(home, ".nilup/bin")
+        paths_to_check = [
+            os.path.expanduser("~/.nilup/bin"),
+            "/opt/render/.nilup/bin",
+            "/opt/render/project/.nilup/bin",
+        ]
         
+        # Try to run nilup manually
+        try:
+            nilup_result = subprocess.run(['nilup', '--version'], capture_output=True, text=True)
+            nilup_output = nilup_result.stdout or nilup_result.stderr
+        except Exception as e:
+            nilup_output = f"Error running nilup: {str(e)}"
+
+        # Try to run nillion manually
+        try:
+            nillion_result = subprocess.run(['nillion', '--version'], capture_output=True, text=True)
+            nillion_output = f"Nillion version: {nillion_result.stdout}" if nillion_result.returncode == 0 else f"Nillion error: {nillion_result.stderr}"
+        except Exception as e:
+            nillion_output = f"Error running nillion: {str(e)}"
+
         return {
-            "home": home,
-            "nilup_path": nilup_path,
-            "nilup_exists": os.path.exists(nilup_path),
-            "current_dir": os.getcwd(),
-            "path_env": os.environ.get("PATH", ""),
-            "user": os.environ.get("USER"),
-            "home_contents": os.listdir(home) if os.path.exists(home) else "Cannot access home",
-            "nilup_contents": os.listdir(nilup_path) if os.path.exists(nilup_path) else "Cannot access nilup path"
+            "current_path": os.environ.get("PATH", ""),
+            "home_directory": home,
+            "paths_checked": {
+                path: {
+                    "exists": os.path.exists(path),
+                    "contents": os.listdir(path) if os.path.exists(path) else "Directory not found",
+                    "is_executable": os.access(path, os.X_OK) if os.path.exists(path) else False
+                }
+                for path in paths_to_check
+            },
+            "nilup_test": nilup_output,
+            "nillion_test": nillion_output,
+            "environment_vars": dict(os.environ)
         }
     except Exception as e:
         return {"error": str(e)}
     
-
 async def store_program(
         compiled_nada_program_path
     ):
