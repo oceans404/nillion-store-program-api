@@ -81,20 +81,53 @@ async def check_nillion_installed() -> tuple[bool, str]:
     Returns: (is_installed, version_or_error)
     """
     try:
-        # Add the nillion path to the environment variables
-        nillion_path = os.path.expanduser("~/.nilup/bin")
-        env = {**os.environ, "PATH": f"{nillion_path}:{os.environ.get('PATH', '')}"}
+        # Try multiple possible paths
+        possible_paths = [
+            os.path.expanduser("~/.nilup/bin"),
+            "/opt/render/.nilup/bin",  # Render specific path
+            "/opt/render/project/.nilup/bin",  # Another possible Render path
+            os.environ.get("NILUP_PATH")  # From environment variable if set
+        ]
 
+        # Filter out None values and create PATH
+        valid_paths = [p for p in possible_paths if p]
+        path_string = ":".join(valid_paths + [os.environ.get("PATH", "")])
+        
+        # Log the paths we're trying
+        logger.info(f"Checking for nillion in PATH: {path_string}")
+        logger.info(f"Current working directory: {os.getcwd()}")
+        
+        # Try to find nillion executable
+        nillion_path = None
+        for path in valid_paths:
+            if path and os.path.exists(os.path.join(path, "nillion")):
+                nillion_path = os.path.join(path, "nillion")
+                logger.info(f"Found nillion at: {nillion_path}")
+                break
+        
+        if not nillion_path:
+            logger.error("Could not find nillion executable in any path")
+            return False, "Nillion executable not found"
+
+        env = {**os.environ, "PATH": path_string}
+        
+        # Log environment for debugging
+        logger.info(f"Using environment PATH: {env.get('PATH')}")
+        
+        # Try to execute nillion
         process = await asyncio.create_subprocess_exec(
-            'nillion', '--version',
+            nillion_path,  # Use full path
+            '--version',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env
         )
+        
         stdout, stderr = await process.communicate()
         
         if process.returncode == 0:
             version = stdout.decode().strip() or stderr.decode().strip()
+            logger.info(f"Successfully got nillion version: {version}")
             return True, version
         else:
             error_message = stderr.decode().strip()
@@ -102,7 +135,34 @@ async def check_nillion_installed() -> tuple[bool, str]:
             return False, error_message
             
     except Exception as e:
+        logger.error(f"Exception checking nillion: {str(e)}")
+        # Log more details about the environment
+        logger.error(f"Environment details:")
+        logger.error(f"HOME: {os.environ.get('HOME')}")
+        logger.error(f"USER: {os.environ.get('USER')}")
+        logger.error(f"PWD: {os.environ.get('PWD')}")
         return False, str(e)
+
+# Add this endpoint for debugging
+@app.get("/debug/paths")
+async def debug_paths():
+    """Debug endpoint to check paths and permissions"""
+    try:
+        home = os.path.expanduser("~")
+        nilup_path = os.path.join(home, ".nilup/bin")
+        
+        return {
+            "home": home,
+            "nilup_path": nilup_path,
+            "nilup_exists": os.path.exists(nilup_path),
+            "current_dir": os.getcwd(),
+            "path_env": os.environ.get("PATH", ""),
+            "user": os.environ.get("USER"),
+            "home_contents": os.listdir(home) if os.path.exists(home) else "Cannot access home",
+            "nilup_contents": os.listdir(nilup_path) if os.path.exists(nilup_path) else "Cannot access nilup path"
+        }
+    except Exception as e:
+        return {"error": str(e)}
     
 
 async def store_program(
@@ -204,7 +264,7 @@ async def store_nada_program(file: UploadFile):
                 with open(temp_output_json_path, mode="r") as json_file:
                     json_content = json_file.read()
                     json_data = json.loads(json_content)
-                    
+
                 if not resp['success'] or resp['error'] is not None:
                     raise HTTPException(status_code=400, detail=resp['error'])
                 else:
