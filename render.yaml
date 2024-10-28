@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: nillion-program-uploader
+    env: python
+    buildCommand: chmod +x build.sh && ./build.sh
+    startCommand: ./startup.sh
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.4
