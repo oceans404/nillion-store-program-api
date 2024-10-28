@@ -16,6 +16,12 @@ import uuid
 import os
 from pydantic import BaseModel
 
+import sys
+import platform
+import datetime
+import traceback
+import pwd
+
 from py_nillion_client import NodeKey, UserKey
 from nillion_python_helpers import get_quote_and_pay, create_nillion_client, create_payments_config
 
@@ -163,6 +169,148 @@ async def debug_nilup():
     except Exception as e:
         return {"error": str(e)}
     
+
+@app.get("/debug/super")
+async def debug_super():
+    """Super verbose debug endpoint that checks everything"""
+    debug_info = {}
+    
+    try:
+        # System Information
+        debug_info["system_info"] = {
+            "current_time": datetime.datetime.now().isoformat(),
+            "python_version": sys.version,
+            "platform": platform.platform(),
+            "architecture": platform.architecture(),
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+            "node": platform.node(),
+        }
+
+        # Directory Information
+        debug_info["directories"] = {
+            "current_working_dir": os.getcwd(),
+            "home_dir": os.path.expanduser("~"),
+            "absolute_path": os.path.abspath("."),
+        }
+
+        # Environment Variables
+        debug_info["environment"] = {
+            "all_env_vars": dict(os.environ),
+            "important_vars": {
+                "PATH": os.environ.get("PATH", "").split(":"),
+                "HOME": os.environ.get("HOME"),
+                "USER": os.environ.get("USER"),
+                "PYTHONPATH": os.environ.get("PYTHONPATH"),
+            }
+        }
+
+        # Nilup/Nillion Installation Checks
+        possible_paths = [
+            "/opt/render/.nilup/bin",
+            "/opt/render/.nilup/bin/nillion",
+            os.path.expanduser("~/.nilup/bin"),
+            os.path.expanduser("~/.nilup/bin/nillion"),
+            "/usr/local/bin/nillion",
+        ]
+
+        debug_info["installation_checks"] = {
+            "possible_paths": {
+                path: {
+                    "exists": os.path.exists(path),
+                    "is_file": os.path.isfile(path) if os.path.exists(path) else None,
+                    "is_dir": os.path.isdir(path) if os.path.exists(path) else None,
+                    "is_executable": os.access(path, os.X_OK) if os.path.exists(path) else None,
+                    "permissions": oct(os.stat(path).st_mode)[-3:] if os.path.exists(path) else None,
+                    "size": os.path.getsize(path) if os.path.exists(path) and os.path.isfile(path) else None,
+                    "last_modified": datetime.datetime.fromtimestamp(os.path.getmtime(path)).isoformat() if os.path.exists(path) else None,
+                }
+                for path in possible_paths
+            }
+        }
+
+        # Directory Contents
+        for check_dir in ["/opt/render/.nilup", "/opt/render/.nilup/bin", os.path.expanduser("~/.nilup")]:
+            if os.path.exists(check_dir) and os.path.isdir(check_dir):
+                try:
+                    contents = os.listdir(check_dir)
+                    debug_info["installation_checks"][f"contents_of_{check_dir}"] = {
+                        item: {
+                            "is_file": os.path.isfile(os.path.join(check_dir, item)),
+                            "is_executable": os.access(os.path.join(check_dir, item), os.X_OK),
+                            "size": os.path.getsize(os.path.join(check_dir, item)),
+                            "permissions": oct(os.stat(os.path.join(check_dir, item)).st_mode)[-3:]
+                        }
+                        for item in contents
+                    }
+                except Exception as e:
+                    debug_info["installation_checks"][f"error_reading_{check_dir}"] = str(e)
+
+        # Command Execution Tests
+        debug_info["command_tests"] = {}
+        
+        commands_to_test = [
+            ("which nillion", "Check nillion in PATH"),
+            ("which nilup", "Check nilup in PATH"),
+            ("/opt/render/.nilup/bin/nillion --version", "Direct nillion version check"),
+            ("/opt/render/.nilup/bin/nilup --version", "Direct nilup version check"),
+            ("ls -la /opt/render/.nilup/bin", "List nilup bin directory"),
+        ]
+
+        for cmd, description in commands_to_test:
+            try:
+                process = await asyncio.create_subprocess_shell(
+                    cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+                debug_info["command_tests"][description] = {
+                    "command": cmd,
+                    "return_code": process.returncode,
+                    "stdout": stdout.decode() if stdout else None,
+                    "stderr": stderr.decode() if stderr else None,
+                }
+            except Exception as e:
+                debug_info["command_tests"][description] = {
+                    "command": cmd,
+                    "error": str(e)
+                }
+
+        # File System Permissions
+        render_paths = [
+            "/opt/render",
+            "/opt/render/.nilup",
+            "/opt/render/.nilup/bin",
+        ]
+        debug_info["render_permissions"] = {
+            path: {
+                "exists": os.path.exists(path),
+                "owner": get_owner(path) if os.path.exists(path) else None,
+                "permissions": oct(os.stat(path).st_mode)[-3:] if os.path.exists(path) else None,
+                "can_read": os.access(path, os.R_OK) if os.path.exists(path) else None,
+                "can_write": os.access(path, os.W_OK) if os.path.exists(path) else None,
+                "can_execute": os.access(path, os.X_OK) if os.path.exists(path) else None,
+            }
+            for path in render_paths
+        }
+
+    except Exception as e:
+        debug_info["error"] = {
+            "message": str(e),
+            "type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+
+    return debug_info
+
+def get_owner(path):
+    """Get the owner of a file/directory"""
+    try:
+        return pwd.getpwuid(os.stat(path).st_uid).pw_name
+    except:
+        return str(os.stat(path).st_uid)
+
 async def store_program(
         compiled_nada_program_path
     ):
