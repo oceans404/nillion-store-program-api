@@ -87,24 +87,37 @@ async def check_nillion_installed() -> tuple[bool, str]:
     Returns: (is_installed, version_or_error)
     """
     try:
-        # Determine if we're in Render or local environment
-        is_render = os.environ.get('RENDER') == 'true'
-        home_dir = "/opt/render" if is_render else os.path.expanduser("~")
-        nillion_path = os.path.join(home_dir, ".nilup/bin")
+        # Get environment-specific paths
+        home_dir = os.environ.get('HOME', os.path.expanduser('~'))
+        render_root = os.environ.get('RENDER_ROOT', '')
+        is_render = os.environ.get('RENDER', '').lower() == 'true'
         
+        # Use Render paths if in Render environment
+        if is_render:
+            base_dir = render_root or '/opt/render'
+        else:
+            base_dir = home_dir
+            
+        nillion_path = os.path.join(base_dir, ".nilup/bin")
         logger.info(f"Running in {'Render' if is_render else 'local'} environment")
-        logger.info(f"Using home directory: {home_dir}")
+        logger.info(f"Using base directory: {base_dir}")
         logger.info(f"Checking nillion in: {nillion_path}")
 
-        # Set up environment with appropriate paths
+        # Set up environment
         env = {
             **os.environ,
-            "HOME": home_dir,
+            "HOME": base_dir,
             "PATH": f"{nillion_path}:{os.environ.get('PATH', '')}"
         }
 
         if not os.path.exists(nillion_path):
             logger.error(f"Directory does not exist: {nillion_path}")
+            # Try to create directory
+            try:
+                os.makedirs(nillion_path, exist_ok=True)
+                logger.info(f"Created directory: {nillion_path}")
+            except Exception as e:
+                logger.error(f"Failed to create directory: {e}")
             return False, f"Nillion path not found: {nillion_path}"
 
         nillion_executable = os.path.join(nillion_path, "nillion")
@@ -133,7 +146,8 @@ async def check_nillion_installed() -> tuple[bool, str]:
             
     except Exception as e:
         logger.error(f"Exception in check_nillion_installed: {str(e)}")
-        return False, str(e)   
+        return False, str(e)
+
 @app.get("/debug/nilup")
 async def debug_nilup():
     """Debug endpoint to check nilup installation"""
