@@ -87,12 +87,22 @@ async def check_nillion_installed() -> tuple[bool, str]:
     Returns: (is_installed, version_or_error)
     """
     try:
-        # Use Render-specific path
-        nillion_path = "/opt/render/.nilup/bin"
-        env = {**os.environ, "PATH": f"{nillion_path}:{os.environ.get('PATH', '')}"}
+        # Determine if we're in Render or local environment
+        is_render = os.environ.get('RENDER') == 'true'
+        home_dir = "/opt/render" if is_render else os.path.expanduser("~")
+        nillion_path = os.path.join(home_dir, ".nilup/bin")
         
+        logger.info(f"Running in {'Render' if is_render else 'local'} environment")
+        logger.info(f"Using home directory: {home_dir}")
         logger.info(f"Checking nillion in: {nillion_path}")
-        
+
+        # Set up environment with appropriate paths
+        env = {
+            **os.environ,
+            "HOME": home_dir,
+            "PATH": f"{nillion_path}:{os.environ.get('PATH', '')}"
+        }
+
         if not os.path.exists(nillion_path):
             logger.error(f"Directory does not exist: {nillion_path}")
             return False, f"Nillion path not found: {nillion_path}"
@@ -103,7 +113,7 @@ async def check_nillion_installed() -> tuple[bool, str]:
             return False, "Nillion executable not found"
 
         process = await asyncio.create_subprocess_exec(
-            nillion_executable,  # Use full path
+            nillion_executable,
             '--version',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -123,8 +133,7 @@ async def check_nillion_installed() -> tuple[bool, str]:
             
     except Exception as e:
         logger.error(f"Exception in check_nillion_installed: {str(e)}")
-        return False, str(e)
-    
+        return False, str(e)   
 @app.get("/debug/nilup")
 async def debug_nilup():
     """Debug endpoint to check nilup installation"""
