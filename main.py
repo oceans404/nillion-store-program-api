@@ -108,7 +108,7 @@ async def debug_nillion_version():
                 for path in paths_to_check
             },
             "nilup_test": nilup_output,
-            "nillion_test": nillion_output
+            "nillion_sdk_version": nillion_output.strip()
         }
     except Exception as e:
         return {"error": str(e)}
@@ -237,8 +237,8 @@ async def store_nada_program(file: UploadFile):
 async def check_nillion_sdk_version():
     """Check the Nillion SDK version the Store Program API is using"""
     debug_output = await debug_nillion_version()
-    nillion_installed = "nillion_test" in debug_output
-    nillion_version = debug_output.get("nillion_test", None)
+    nillion_installed = "nillion_sdk_version" in debug_output
+    nillion_version = debug_output.get("nillion_sdk_version", None)
     return {
         "nillion_installed": nillion_installed,
         "nillion_version": nillion_version,
