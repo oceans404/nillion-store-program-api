@@ -6,7 +6,7 @@ import tempfile
 import shutil
 import asyncio
 import logging
-from typing import Optional, Dict
+from typing import List, Optional, Dict
 import json
 import uuid
 import asyncio
@@ -25,17 +25,17 @@ from cosmpy.crypto.keypairs import PrivateKey
 
 # Nillion Testnet Config: https://docs.nillion.com/network-configuration#testnet
 nillion_testnet_default_config = {
-    "cluster_id": 'b13880d3-dde8-4a75-a171-8a1a9d985e6c',
-    "grpc_endpoint": 'https://testnet-nillion-grpc.lavenderfive.com',
-    "chain_id": 'nillion-chain-testnet-1',
-    "bootnodes": ['/dns/node-1.testnet-photon.nillion-network.nilogy.xyz/tcp/14111/p2p/12D3KooWCfFYAb77NCjEk711e9BVe2E6mrasPZTtAjJAPtVAdbye']
+    "cluster_id": os.getenv("NILLION_CLUSTER_ID", 'b13880d3-dde8-4a75-a171-8a1a9d985e6c'),
+    "grpc_endpoint": os.getenv("NILLION_NILCHAIN_GRPC", 'https://testnet-nillion-grpc.lavenderfive.com'),
+    "chain_id": os.getenv("NILLION_NILCHAIN_CHAIN_ID", 'nillion-chain-testnet-1'),
+    "bootnodes": [os.getenv("NILLION_BOOTNODE_MULTIADDRESS", '/dns/node-1.testnet-photon.nillion-network.nilogy.xyz/tcp/14111/p2p/12D3KooWCfFYAb77NCjEk711e9BVe2E6mrasPZTtAjJAPtVAdbye')] 
 }
 
 from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    private_key = PrivateKey(bytes.fromhex(os.getenv("NILLION_PRIVATE_KEY")))
+    private_key = PrivateKey(bytes.fromhex(os.getenv("NILLION_NILCHAIN_PRIVATE_KEY_0")))
 except Exception as e:
     raise RuntimeError(f"Invalid Nilchain private key! Set your Nillion Testnet private key in the .env file.")
 
@@ -65,7 +65,7 @@ class StoreProgramSuccessResponse(BaseModel):
     error: Optional[str] = None
 
 class StoreProgramErrorResponse(BaseModel):
-    success: bool
+    success: bool = False
     error: str
     program_id: Optional[str] = None
     json_content: Optional[Dict] = None
@@ -74,6 +74,10 @@ class NillionVersionResponse(BaseModel):
     nillion_installed: bool
     nillion_version: Optional[str] = None
     error: Optional[str] = None
+    cluster_id: str
+    grpc_endpoint: str
+    chain_id: str
+    bootnodes: List[str]
 
 # @app.get("/debug/nilup")
 async def debug_nillion_version():
@@ -115,17 +119,18 @@ async def debug_nillion_version():
     
 
 async def store_program(
-        compiled_nada_program_path
-    ):
+    compiled_nada_program_path: str,
+    user_seed: Optional[str] = None
+):
     try:
         cluster_id = nillion_testnet_default_config["cluster_id"]
         grpc_endpoint = nillion_testnet_default_config["grpc_endpoint"]
         chain_id = nillion_testnet_default_config["chain_id"]
         bootnodes = nillion_testnet_default_config["bootnodes"]
         
-        # Create Nillion Client for user
+        # Create Nillion Client for user using seed if provided, otherwise generate a random seed
         seed = str(uuid.uuid4())
-        userkey = UserKey.from_seed(f"program-uploader-{seed}")
+        userkey = UserKey.from_seed(user_seed) if user_seed else UserKey.from_seed(f"program-uploader-{seed}")
         nodekey = NodeKey.from_seed(seed)
         client = create_nillion_client(userkey, nodekey, bootnodes)
         user_id = client.user_id
@@ -168,7 +173,7 @@ async def store_program(
         }
     }
 )
-async def store_nada_program(file: UploadFile):
+async def store_nada_program(file: UploadFile, user_seed: Optional[str] = None):
     """Upload a valid Nada program file, compile it to binary, and store the program on the Nillion Testnet; Returns the Program ID"""
 
     if not file.filename.endswith('.py'):
@@ -198,7 +203,7 @@ async def store_nada_program(file: UploadFile):
             if process.returncode != 0:
                 return StoreProgramErrorResponse(
                     success=False,
-                    error="Command execution failed",
+                    error=f"Failed to compile Nada program: {stderr.decode('utf-8')}",
                     program_id=None,
                     json_content=None
                 )
@@ -209,7 +214,7 @@ async def store_nada_program(file: UploadFile):
             temp_output_bin_path = os.path.join(temp_dir, output_binary_filename)
             temp_output_json_path = os.path.join(temp_dir, output_json_filename)
             if os.path.exists(temp_output_json_path) and os.path.exists(temp_output_bin_path):
-                resp = await store_program(temp_output_bin_path)
+                resp = await store_program(temp_output_bin_path, user_seed)
                 with open(temp_output_json_path, mode="r") as json_file:
                     json_content = json_file.read()
                     json_data = json.loads(json_content)
@@ -242,5 +247,6 @@ async def check_nillion_sdk_version():
     return {
         "nillion_installed": nillion_installed,
         "nillion_version": nillion_version,
-        "error": None if nillion_installed else "Nillion not installed"
+        "error": None if nillion_installed else "Nillion not installed",
+        **nillion_testnet_default_config
     }

@@ -5,7 +5,8 @@ pydantic==2.1.1
 python-dotenv==1.0.0
 
 # nillion python dependencies
-nada-dsl
-py-nillion-client
-nillion-python-helpers
+nada-dsl>=0.6.4
+nada-numpy>=0.5.3
+py-nillion-client>=0.6.0
+nillion-python-helpers>=0.3.1
 cosmpy>=0.9.2
