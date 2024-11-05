@@ -87,43 +87,30 @@ async def check_nillion_installed() -> tuple[bool, str]:
     Returns: (is_installed, version_or_error)
     """
     try:
-        # Get environment-specific paths
-        home_dir = os.environ.get('HOME', os.path.expanduser('~'))
-        render_root = os.environ.get('RENDER_ROOT', '')
-        is_render = os.environ.get('RENDER', '').lower() == 'true'
+        possible_paths = [
+            "/root/.nilup/bin",  # Docker/Render path
+            os.path.expanduser("~/.nilup/bin"),  # Local installation path
+        ]
         
-        # Use Render paths if in Render environment
-        if is_render:
-            base_dir = render_root or '/opt/render'
-        else:
-            base_dir = home_dir
-            
-        nillion_path = os.path.join(base_dir, ".nilup/bin")
-        logger.info(f"Running in {'Render' if is_render else 'local'} environment")
-        logger.info(f"Using base directory: {base_dir}")
-        logger.info(f"Checking nillion in: {nillion_path}")
+        nillion_executable = None
+        nillion_path = None
+        
+        for path in possible_paths:
+            potential_executable = os.path.join(path, "nillion")
+            if os.path.exists(potential_executable):
+                nillion_executable = potential_executable
+                nillion_path = path
+                logger.info(f"Found nillion in: {nillion_path}")
+                break
+                
+        if not nillion_executable:
+            logger.error("Nillion executable not found in any standard locations")
+            return False, f"Nillion executable not found in paths: {', '.join(possible_paths)}"
 
-        # Set up environment
         env = {
             **os.environ,
-            "HOME": base_dir,
             "PATH": f"{nillion_path}:{os.environ.get('PATH', '')}"
         }
-
-        if not os.path.exists(nillion_path):
-            logger.error(f"Directory does not exist: {nillion_path}")
-            # Try to create directory
-            try:
-                os.makedirs(nillion_path, exist_ok=True)
-                logger.info(f"Created directory: {nillion_path}")
-            except Exception as e:
-                logger.error(f"Failed to create directory: {e}")
-            return False, f"Nillion path not found: {nillion_path}"
-
-        nillion_executable = os.path.join(nillion_path, "nillion")
-        if not os.path.exists(nillion_executable):
-            logger.error(f"Nillion executable not found at: {nillion_executable}")
-            return False, "Nillion executable not found"
 
         process = await asyncio.create_subprocess_exec(
             nillion_executable,
