@@ -25,4 +25,6 @@ RUN pip install -r requirements.txt
 
 EXPOSE 8000
 
-CMD /root/.nilup/bin/nilup --version && nillion --version && python main.py
+CMD /root/.nilup/bin/nilup --version && \
+    nillion --version && \
+    uvicorn main:app --host 0.0.0.0 --port 8000
