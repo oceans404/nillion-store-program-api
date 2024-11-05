@@ -1,6 +1,5 @@
 from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 import subprocess
 import os
 import tempfile
@@ -16,11 +15,6 @@ import uuid
 import os
 from pydantic import BaseModel
 
-import sys
-import platform
-import datetime
-import traceback
-import pwd
 
 from py_nillion_client import NodeKey, UserKey
 from nillion_python_helpers import get_quote_and_pay, create_nillion_client, create_payments_config
@@ -81,59 +75,6 @@ class NillionVersionResponse(BaseModel):
     nillion_version: Optional[str] = None
     error: Optional[str] = None
 
-async def check_nillion_installed() -> tuple[bool, str]:
-    """
-    Check if nillion is installed and return version
-    Returns: (is_installed, version_or_error)
-    """
-    try:
-        # Check both Render and local paths
-        possible_paths = [
-            "/root/.nilup/bin/nillion",  # Render path
-            os.path.expanduser("~/.nilup/bin/nillion"),  # Local path
-        ]
-        
-        # Find first existing executable
-        nillion_executable = None
-        for path in possible_paths:
-            if os.path.exists(path):
-                nillion_executable = path
-                logger.info(f"Found nillion at: {path}")
-                break
-                
-        if not nillion_executable:
-            logger.error(f"Nillion executable not found in any of: {possible_paths}")
-            return False, f"Nillion executable not found in paths: {possible_paths}"
-
-        nillion_path = os.path.dirname(nillion_executable)
-        env = {
-            **os.environ,
-            "PATH": f"{nillion_path}:{os.environ.get('PATH', '')}"
-        }
-
-        process = await asyncio.create_subprocess_exec(
-            nillion_executable,
-            '--version',
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env
-        )
-        
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode == 0:
-            version = stdout.decode().strip() or stderr.decode().strip()
-            logger.info(f"Nillion version: {version}")
-            return True, version
-        else:
-            error_message = stderr.decode().strip()
-            logger.error(f"Error executing nillion: {error_message}")
-            return False, error_message
-            
-    except Exception as e:
-        logger.error(f"Exception in check_nillion_installed: {str(e)}")
-        return False, str(e)
-
 @app.get("/debug/nilup")
 async def debug_nilup():
     """Debug endpoint to check nilup installation"""
@@ -142,8 +83,6 @@ async def debug_nilup():
         home = os.path.expanduser("~")
         paths_to_check = [
             os.path.expanduser("~/.nilup/bin"),
-            "/opt/render/.nilup/bin",
-            "/opt/render/project/.nilup/bin",
         ]
         
         # Try to run nilup manually
@@ -156,7 +95,7 @@ async def debug_nilup():
         # Try to run nillion manually
         try:
             nillion_result = subprocess.run(['nillion', '--version'], capture_output=True, text=True)
-            nillion_output = f"Nillion version: {nillion_result.stdout}" if nillion_result.returncode == 0 else f"Nillion error: {nillion_result.stderr}"
+            nillion_output = nillion_result.stdout if nillion_result.returncode == 0 else f"Nillion error: {nillion_result.stderr}"
         except Exception as e:
             nillion_output = f"Error running nillion: {str(e)}"
 
@@ -172,19 +111,11 @@ async def debug_nilup():
                 for path in paths_to_check
             },
             "nilup_test": nilup_output,
-            "nillion_test": nillion_output,
-            "environment_vars": dict(os.environ)
+            "nillion_test": nillion_output
         }
     except Exception as e:
         return {"error": str(e)}
     
-
-def get_owner(path):
-    """Get the owner of a file/directory"""
-    try:
-        return pwd.getpwuid(os.stat(path).st_uid).pw_name
-    except:
-        return str(os.stat(path).st_uid)
 
 async def store_program(
         compiled_nada_program_path
@@ -308,9 +239,12 @@ async def store_nada_program(file: UploadFile):
 @app.get("/check-nillion-version", response_model=NillionVersionResponse)
 async def check_nillion_sdk_version():
     """Check the Nillion SDK version the Store Program API is using"""
-    is_installed, version_or_error = await check_nillion_installed()
+    debug_output = await debug_nilup()
+    logger.info(f"Debug output: {debug_output}")
+    nillion_installed = "nillion_test" in debug_output
+    nillion_version = debug_output.get("nillion_test", None)
     return {
-        "nillion_installed": is_installed,
-        "nillion_version": version_or_error if is_installed else None,
-        "error": None if is_installed else version_or_error
+        "nillion_installed": nillion_installed,
+        "nillion_version": nillion_version,
+        "error": None if nillion_installed else "Nillion not installed"
     }
