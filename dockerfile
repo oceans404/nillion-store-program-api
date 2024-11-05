@@ -1,6 +1,6 @@
 FROM python:3.11
 ARG NIL_SDK_VERSION=latest
-ENV PATH="/app/sdk:$PATH"
+ENV PATH="/app/sdk:/root/.nilup/bin:$PATH"
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
@@ -25,4 +25,4 @@ RUN pip install -r requirements.txt
 
 EXPOSE 8000
 
-CMD nilup --version && nillion --version && python main.py
+CMD /root/.nilup/bin/nilup --version && nillion --version && python main.py
