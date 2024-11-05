@@ -75,27 +75,24 @@ class NillionVersionResponse(BaseModel):
     nillion_version: Optional[str] = None
     error: Optional[str] = None
 
-@app.get("/debug/nilup")
-async def debug_nilup():
+# @app.get("/debug/nilup")
+async def debug_nillion_version():
     """Debug endpoint to check nilup installation"""
     try:
-        # Check various paths
         home = os.path.expanduser("~")
         paths_to_check = [
             os.path.expanduser("~/.nilup/bin"),
         ]
         
-        # Try to run nilup manually
         try:
             nilup_result = subprocess.run(['nilup', '--version'], capture_output=True, text=True)
             nilup_output = nilup_result.stdout or nilup_result.stderr
         except Exception as e:
             nilup_output = f"Error running nilup: {str(e)}"
 
-        # Try to run nillion manually
         try:
             nillion_result = subprocess.run(['nillion', '--version'], capture_output=True, text=True)
-            nillion_output = nillion_result.stdout if nillion_result.returncode == 0 else f"Nillion error: {nillion_result.stderr}"
+            nillion_output = nillion_result.stdout if nillion_result.returncode == 0 else None
         except Exception as e:
             nillion_output = f"Error running nillion: {str(e)}"
 
@@ -239,8 +236,7 @@ async def store_nada_program(file: UploadFile):
 @app.get("/check-nillion-version", response_model=NillionVersionResponse)
 async def check_nillion_sdk_version():
     """Check the Nillion SDK version the Store Program API is using"""
-    debug_output = await debug_nilup()
-    logger.info(f"Debug output: {debug_output}")
+    debug_output = await debug_nillion_version()
     nillion_installed = "nillion_test" in debug_output
     nillion_version = debug_output.get("nillion_test", None)
     return {

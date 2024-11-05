@@ -19,3 +19,11 @@ uvicorn main:app --reload
 ```
 
 Visit http://localhost:8000/docs to see the API docs.
+
+## Render
+
+Use docker environment. Web service start command:
+
+```
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
